@@ -1,5 +1,5 @@
 /*
- * Arduino based safety stop
+ * ATmega328P based safety stop
  * Service: safety_stop_srv
  * Topic: start_button
  */
@@ -12,6 +12,7 @@
 typedef enum{
   RUNNING =1,
   SAFETY_STOP,
+  REQUEST_PENDING,
 }State;
 
 const int START_BUTTON = 4;
@@ -21,8 +22,8 @@ const int POWER_CTRL = 7;
 const int GREEN_LED_PIN = 6;
 const int RED_LED_PIN = 11;
 const int INTERVAL = 500;
+const int NUMBER_OF_TRY = 3;
 
-int led_state = LOW; 
 int power_state = HIGH;
 State system_state;
 
@@ -31,7 +32,7 @@ ros::NodeHandle  nh;
 ros::ServiceClient<std_srvs::SetBool::Request, std_srvs::SetBool::Response> safety_stop_srv("safety_stop_srv");
 
 std_msgs::Bool start_msg;
-ros::Publisher start_button("start_button", &start_msg);
+ros::Publisher start_button("start_button_msg", &start_msg);
 
 void start_button_handle();
 void safety_stop_handler();
@@ -97,24 +98,32 @@ void safety_stop_handler()
 {
   static bool last_reading = true;
   bool reading = digitalRead(SAFETY_BUTTON);
-  std_srvs::SetBool::Request req;
-  std_srvs::SetBool::Response res;
   
   if (last_reading!= reading){
+    std_srvs::SetBool::Request req;
+    std_srvs::SetBool::Response res;
     last_reading = reading;
     req.data = reading;
-    if(safety_stop_srv.call(req, res))
+    system_state = REQUEST_PENDING;
+    
+    for(int i=0; i<NUMBER_OF_TRY; i++)
     {
-      if(reading)
+      if(safety_stop_srv.call(req, res))
       {
-        system_state = RUNNING;
+        if(reading)
+        {
+          system_state = RUNNING;
+        }
+        else
+        {
+          system_state = SAFETY_STOP;
+        }
+        break;
       }
-      else
-      {
-        system_state = SAFETY_STOP;
-      }
+      delay(10);
     }
-    else
+    
+    if(system_state == REQUEST_PENDING)
     {
       system_state = SAFETY_STOP;
       power_state = LOW;
@@ -129,13 +138,7 @@ void led_handler()
   if (millis() - last_time >= INTERVAL)
   {
     last_time = millis();
-    
-    if (led_state == LOW) {
-      led_state = HIGH;
-    } else {
-      led_state = LOW;
-    }
-    digitalWrite(GREEN_LED_PIN, led_state);
+    digitalWrite(GREEN_LED_PIN, HIGH - digitalRead(GREEN_LED_PIN));
   }
 }
 
