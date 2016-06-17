@@ -16,16 +16,20 @@ typedef enum{
 }State;
 
 const int START_BUTTON = 4;
-const int SAFETY_BUTTON = 5;
-const int DRIVE_CTRL = 6;
-const int POWER_CTRL = 7;
-const int GREEN_LED_PIN = 6;
-const int RED_LED_PIN = 11;
+const int SAFETY_BUTTON = 2;
+//const int DRIVE_CTRL = 6;
+const int POWER_CTRL = 3;
+//const int GREEN_LED_PIN = 6;
+const int RED_LED_PIN = 13;
+
 const int INTERVAL = 500;
 const int NUMBER_OF_TRY = 3;
 
+bool start_last_reading = false;
+
 int power_state = HIGH;
 State system_state;
+bool last_reading;
 
 ros::NodeHandle  nh;
 
@@ -42,19 +46,28 @@ void setup()
 {
   pinMode(START_BUTTON, INPUT);
   pinMode(SAFETY_BUTTON, INPUT);
-  pinMode(DRIVE_CTRL, OUTPUT);
+  //pinMode(DRIVE_CTRL, OUTPUT);
   pinMode(POWER_CTRL, OUTPUT);
   pinMode(RED_LED_PIN, OUTPUT);
-  pinMode(GREEN_LED_PIN, OUTPUT);
+  //pinMode(GREEN_LED_PIN, OUTPUT);
   
   digitalWrite(POWER_CTRL, power_state);
-  digitalWrite(GREEN_LED_PIN, HIGH);
+  //digitalWrite(GREEN_LED_PIN, HIGH);
   
-  system_state = RUNNING;
+  
+  last_reading = digitalRead(SAFETY_BUTTON);
+  if(last_reading == HIGH)
+  {
+    system_state = RUNNING;
+  }
+  else
+  {
+    system_state = SAFETY_STOP;
+  }
   
   nh.initNode();
   nh.advertise(start_button);
-  nh.serviceClient(safety_stop_srv);
+  //nh.serviceClient(safety_stop_srv);
   
   while(!nh.connected()) nh.spinOnce();
   nh.loginfo("Safety stop startup complete");
@@ -62,6 +75,7 @@ void setup()
 
 void loop()
 {
+  
   if(system_state == RUNNING)
   { 
     start_button_handle();
@@ -71,7 +85,7 @@ void loop()
   
   if(system_state == SAFETY_STOP)
   {
-    digitalWrite(GREEN_LED_PIN, LOW);
+    //digitalWrite(GREEN_LED_PIN, LOW);
     digitalWrite(RED_LED_PIN, HIGH);
     safety_stop_handler();
   }
@@ -82,11 +96,10 @@ void loop()
 
 void start_button_handle()
 {
-  static bool last_reading = false;
   bool reading = digitalRead(START_BUTTON);
   
-  if (last_reading!= reading){
-    last_reading = reading;
+  if (start_last_reading!= reading){
+    start_last_reading = reading;
     if(reading){
       start_msg.data = reading;
       start_button.publish(&start_msg);
@@ -96,10 +109,9 @@ void start_button_handle()
 
 void safety_stop_handler()
 {
-  static bool last_reading = true;
   bool reading = digitalRead(SAFETY_BUTTON);
   
-  if (last_reading!= reading){
+  if (last_reading != reading){
     std_srvs::SetBool::Request req;
     std_srvs::SetBool::Response res;
     last_reading = reading;
@@ -108,9 +120,10 @@ void safety_stop_handler()
     
     for(int i=0; i<NUMBER_OF_TRY; i++)
     {
-      if(safety_stop_srv.call(req, res))
+      safety_stop_srv.call(req, res);
+      if(res.success)
       {
-        if(reading)
+        if(reading == HIGH)
         {
           system_state = RUNNING;
         }
@@ -138,7 +151,7 @@ void led_handler()
   if (millis() - last_time >= INTERVAL)
   {
     last_time = millis();
-    digitalWrite(GREEN_LED_PIN, HIGH - digitalRead(GREEN_LED_PIN));
+    digitalWrite(RED_LED_PIN, HIGH - digitalRead(RED_LED_PIN));
   }
 }
 
